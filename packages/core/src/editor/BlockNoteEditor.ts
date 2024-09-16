@@ -1,5 +1,7 @@
-import { EditorOptions, Extension, getSchema } from "@tiptap/core";
-import { Node, Schema } from "prosemirror-model";
+import {EditorOptions, Extension, getSchema} from "@tiptap/core";
+
+import {Transaction} from "@tiptap/pm/state";
+import {Node, Schema} from "prosemirror-model";
 // import "./blocknote.css";
 import * as Y from "yjs";
 import {
@@ -9,16 +11,15 @@ import {
   replaceBlocks,
   updateBlock,
 } from "../api/blockManipulation/blockManipulation";
-import { createExternalHTMLExporter } from "../api/exporters/html/externalHTMLExporter";
-import { blocksToMarkdown } from "../api/exporters/markdown/markdownExporter";
-import { getBlockInfoFromPos } from "../api/getBlockInfoFromPos";
-import {
-  inlineContentToNodes,
-  nodeToBlock,
-} from "../api/nodeConversions/nodeConversions";
-import { getNodeById } from "../api/nodeUtil";
-import { HTMLToBlocks } from "../api/parsers/html/parseHTML";
-import { markdownToBlocks } from "../api/parsers/markdown/parseMarkdown";
+import {createExternalHTMLExporter} from "../api/exporters/html/externalHTMLExporter";
+import {createInternalHTMLSerializer} from "../api/exporters/html/internalHTMLSerializer";
+import "../style.css";
+import {blocksToMarkdown} from "../api/exporters/markdown/markdownExporter";
+import {getBlockInfoFromPos} from "../api/getBlockInfoFromPos";
+import {inlineContentToNodes, nodeToBlock,} from "../api/nodeConversions/nodeConversions";
+import {getNodeById} from "../api/nodeUtil";
+import {HTMLToBlocks} from "../api/parsers/html/parseHTML";
+import {markdownToBlocks} from "../api/parsers/markdown/parseMarkdown";
 import {
   Block,
   DefaultBlockSchema,
@@ -26,13 +27,19 @@ import {
   DefaultStyleSchema,
   PartialBlock,
 } from "../blocks/defaultBlocks";
-import { FilePanelProsemirrorPlugin } from "../extensions/FilePanel/FilePanelPlugin";
-import { FormattingToolbarProsemirrorPlugin } from "../extensions/FormattingToolbar/FormattingToolbarPlugin";
-import { LinkToolbarProsemirrorPlugin } from "../extensions/LinkToolbar/LinkToolbarPlugin";
-import { SideMenuProsemirrorPlugin } from "../extensions/SideMenu/SideMenuPlugin";
-import { SuggestionMenuProseMirrorPlugin } from "../extensions/SuggestionMenu/SuggestionPlugin";
-import { TableHandlesProsemirrorPlugin } from "../extensions/TableHandles/TableHandlesPlugin";
-import { UniqueID } from "../extensions/UniqueID/UniqueID";
+
+import {checkDefaultBlockTypeInSchema} from "../blocks/defaultBlockTypeGuards";
+import {FilePanelProsemirrorPlugin} from "../extensions/FilePanel/FilePanelPlugin";
+import {FormattingToolbarProsemirrorPlugin} from "../extensions/FormattingToolbar/FormattingToolbarPlugin";
+import {LinkToolbarProsemirrorPlugin} from "../extensions/LinkToolbar/LinkToolbarPlugin";
+
+import {PlaceholderPlugin} from "../extensions/Placeholder/PlaceholderPlugin";
+import {SideMenuProsemirrorPlugin} from "../extensions/SideMenu/SideMenuPlugin";
+import {SuggestionMenuProseMirrorPlugin} from "../extensions/SuggestionMenu/SuggestionPlugin";
+import {TableHandlesProsemirrorPlugin} from "../extensions/TableHandles/TableHandlesPlugin";
+import {UniqueID} from "../extensions/UniqueID/UniqueID";
+import {Dictionary} from "../i18n/dictionary";
+import {en} from "../i18n/locales";
 import {
   BlockIdentifier,
   BlockNoteDOMAttributes,
@@ -41,34 +48,21 @@ import {
   InlineContentSchema,
   InlineContentSpecs,
   PartialInlineContent,
+  Styles,
   StyleSchema,
   StyleSpecs,
-  Styles,
 } from "../schema";
-import { mergeCSSClasses } from "../util/browser";
-import { NoInfer, UnreachableCaseError } from "../util/typescript";
+import {mergeCSSClasses} from "../util/browser";
+import {initializeESMDependencies} from "../util/esmDependencies";
+import {NoInfer, UnreachableCaseError} from "../util/typescript";
 
-import { getBlockNoteExtensions } from "./BlockNoteExtensions";
-import { TextCursorPosition } from "./cursorPositionTypes";
+import {getBlockNoteExtensions} from "./BlockNoteExtensions";
+import {BlockNoteSchema} from "./BlockNoteSchema";
+import {BlockNoteTipTapEditor, BlockNoteTipTapEditorOptions,} from "./BlockNoteTipTapEditor";
+import {TextCursorPosition} from "./cursorPositionTypes";
 
-import { Selection } from "./selectionTypes";
-import { transformPasted } from "./transformPasted";
-
-import { checkDefaultBlockTypeInSchema } from "../blocks/defaultBlockTypeGuards";
-import { BlockNoteSchema } from "./BlockNoteSchema";
-import {
-  BlockNoteTipTapEditor,
-  BlockNoteTipTapEditorOptions,
-} from "./BlockNoteTipTapEditor";
-
-import { PlaceholderPlugin } from "../extensions/Placeholder/PlaceholderPlugin";
-import { Dictionary } from "../i18n/dictionary";
-import { en } from "../i18n/locales";
-
-import { Transaction } from "@tiptap/pm/state";
-import { createInternalHTMLSerializer } from "../api/exporters/html/internalHTMLSerializer";
-import "../style.css";
-import { initializeESMDependencies } from "../util/esmDependencies";
+import {Selection} from "./selectionTypes";
+import {transformPasted} from "./transformPasted";
 
 export type BlockNoteEditorOptions<
   BSchema extends BlockSchema,
@@ -546,7 +540,7 @@ export class BlockNoteEditor<
    * @param reverse Whether the blocks should be traversed in reverse order.
    */
   public forEachBlock(
-    callback: (block: Block<BSchema, ISchema, SSchema>) => boolean,
+    callback: (block: Block<BSchema, ISchema, SSchema>) => boolean | undefined,
     reverse = false
   ): void {
     const blocks = this.document.slice();
@@ -559,7 +553,7 @@ export class BlockNoteEditor<
       blockArray: Block<BSchema, ISchema, SSchema>[]
     ): boolean {
       for (const block of blockArray) {
-        if (!callback(block)) {
+        if (callback(block) === false) {
           return false;
         }
 
